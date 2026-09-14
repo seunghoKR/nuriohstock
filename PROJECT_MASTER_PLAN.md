@@ -52,7 +52,7 @@
 | **보안 및 암호화** | AES-256-GCM (cryptography) | 계좌번호, API Key/Secret 로컬 암호화 보관 |
 | **알림 시스템** | python-telegram-bot (v20) | 실시간 체결 알림, 서킷브레이커 긴급 경보, 일일/주간 결산 리포트 |
 | **프론트엔드** | React 18, Vite, Tailwind CSS | 다크 테마 대시보드 v1.2.0, 반응형 그리드, Recharts 누적수익 차트 |
-| **로컬 AI** | LM Studio (Port 1234), Gemma-4-e2b | 외부 유출 없는 100% 로컬 AI 추론, 20년 트레이더 페르소나 |
+| **AI 엔진 (하이브리드)** | Google Gemini 3.6 Flash (Primary) + LM Studio Gemma-4-E2B (Fallback) | 구글 클라우드 초고속 AI + 100% 오프라인 로컬 AI 무적의 듀얼 체제 |
 
 ---
 
