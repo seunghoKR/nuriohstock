@@ -246,7 +246,10 @@ class RequestHandler(BaseHTTPRequestHandler):
                         ],
                         "generationConfig": {
                             "temperature": 0.4,
-                            "maxOutputTokens": 1500
+                            "maxOutputTokens": 8192,
+                            "thinkingConfig": {
+                                "thinkingBudget": 512
+                            }
                         }
                     }
                     g_res = requests.post(g_url, json=g_payload, timeout=20)
