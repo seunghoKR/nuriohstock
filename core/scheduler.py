@@ -1,34 +1,46 @@
 from apscheduler.schedulers.background import BackgroundScheduler
 from loguru import logger
 import datetime
-
 import asyncio
+from core.market_reporter import MarketReporter
 
 class StockScheduler:
-    """장 시간 기반 스케줄러"""
+    """장 시간 기반 스케줄러 & 시장 브리핑 리포터"""
 
     def __init__(self, technical_analyst=None, signal_agent=None, order_engine=None, telegram=None):
         self.technical_analyst = technical_analyst
         self.signal_agent = signal_agent
         self.order_engine = order_engine
         self.telegram = telegram
+        self.reporter = MarketReporter()
         self.scheduler = BackgroundScheduler(timezone="Asia/Seoul")
         self._is_running = True
         self._setup_jobs()
 
     def _setup_jobs(self):
-        # 평일 08:30: 장 전 시장 분석
-        self.scheduler.add_job(self.pre_market_analysis, 'cron', day_of_week='mon-fri', hour=8, minute=30)
-        # 평일 09:00: 매매 봇 시작
+        # 1. 매주 월요일 08:15: [주간 증시 대전망 리포트] (글로벌 캘린더 & 주간 밴드)
+        self.scheduler.add_job(self.reporter.send_weekly_outlook, 'cron', day_of_week='mon', hour=8, minute=15)
+
+        # 2. 평일 08:35: [모닝 장전 브리핑] (큰 그림 & 작은 그림 시장 분석)
+        self.scheduler.add_job(self.reporter.send_morning_briefing, 'cron', day_of_week='mon-fri', hour=8, minute=35)
+
+        # 3. 평일 09:00: 매매 봇 감시 가동
         self.scheduler.add_job(self.start_trading, 'cron', day_of_week='mon-fri', hour=9, minute=0)
-        # 평일 15:20: 장 마감 10분 전 경고
+
+        # 4. 평일 11:30: [점심 증시 핵심 속보 & 1줄 해설]
+        self.scheduler.add_job(self.reporter.send_breaking_news_alert, 'cron', day_of_week='mon-fri', hour=11, minute=30)
+
+        # 5. 평일 14:00: [오후 증시 핵심 속보 & 1줄 해설]
+        self.scheduler.add_job(self.reporter.send_breaking_news_alert, 'cron', day_of_week='mon-fri', hour=14, minute=0)
+
+        # 6. 평일 15:20: 장 마감 10분 전 경고 (신규 진입 차단)
         self.scheduler.add_job(self.closing_warning, 'cron', day_of_week='mon-fri', hour=15, minute=20)
-        # 평일 15:30: 매매 봇 정지 + 미체결 주문 취소
+
+        # 7. 평일 15:30: 매매 봇 정지 + 미체결 주문 안전 취소
         self.scheduler.add_job(self.stop_trading, 'cron', day_of_week='mon-fri', hour=15, minute=30)
-        # 평일 15:35: 일일 결산 리포트
-        self.scheduler.add_job(self.daily_report, 'cron', day_of_week='mon-fri', hour=15, minute=35)
-        # 매주 월요일 08:00: 주간 포트폴리오 리포트
-        self.scheduler.add_job(self.weekly_report, 'cron', day_of_week='mon', hour=8, minute=0)
+
+        # 8. 평일 15:40: [장 마감 결산 & 내일 전망 브리핑] (수급 복기 및 정산)
+        self.scheduler.add_job(self.reporter.send_closing_briefing, 'cron', day_of_week='mon-fri', hour=15, minute=40)
 
     async def start(self):
         """스케줄러 시작 및 무한 대기 루프"""
