@@ -61,6 +61,26 @@ export default function App() {
   const [loading,         setLoading]         = useState(false)
   const [apiError,        setApiError]        = useState(false)
 
+  // AI 어시스턴트 사이드바 상태 (기본 열림, 기본 너비 440px)
+  const [chatOpen, setChatOpen] = useState(() => {
+    const saved = localStorage.getItem('youngja_chat_open')
+    return saved !== null ? saved === 'true' : true
+  })
+  const [chatWidth, setChatWidth] = useState(() => {
+    return parseInt(localStorage.getItem('youngja_chat_width')) || 440
+  })
+
+  // 화면 너비 감지 (1280px 이상 데스크톱일 때 사이드바 폭만큼 메인 여백 확보)
+  const [isDesktop, setIsDesktop] = useState(typeof window !== 'undefined' ? window.innerWidth >= 1280 : true)
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsDesktop(window.innerWidth >= 1280)
+    }
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
   const fetchAll = useCallback(async () => {
     try {
       const [status, slotData, balanceData, agentData, tradeData] = await Promise.all([
@@ -86,57 +106,72 @@ export default function App() {
   }, [fetchAll])
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-100">
-      <Header systemStatus={systemStatus} circuitBreaker={circuitBreaker} />
+    <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col relative overflow-x-hidden">
+      <div
+        className="flex-1 transition-all duration-150 min-w-0"
+        style={{
+          marginRight: (chatOpen && isDesktop) ? `${chatWidth}px` : '0px'
+        }}
+      >
+        <Header systemStatus={systemStatus} circuitBreaker={circuitBreaker} />
 
-      <main className="p-4 md:p-6 max-w-[1600px] mx-auto">
-        {/* API 연결 오류 배너 */}
-        {apiError && (
-          <div className="mb-4 bg-yellow-900/40 border border-yellow-600/50 text-yellow-300 text-xs px-4 py-2.5 rounded-xl flex items-center gap-2">
-            ⚠️ 백엔드 서버(localhost:4001)에 연결 중입니다. 데모 데이터로 표시합니다.
+        <main className="p-4 md:p-6 max-w-[1600px] mx-auto">
+          {/* API 연결 오류 배너 */}
+          {apiError && (
+            <div className="mb-4 bg-yellow-900/40 border border-yellow-600/50 text-yellow-300 text-xs px-4 py-2.5 rounded-xl flex items-center gap-2">
+              ⚠️ 백엔드 서버(localhost:4001)에 연결 중입니다. 데모 데이터로 표시합니다.
+            </div>
+          )}
+
+          {/* 상단: 잔고 카드 + 에이전트 상태 */}
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 mb-6">
+            <div className="lg:col-span-1">
+              <BalanceCard balance={balance} />
+            </div>
+            <div className="lg:col-span-1">
+              <AgentStatusCard agents={agents} />
+            </div>
+            {/* 요약 KPI */}
+            <div className="lg:col-span-2 grid grid-cols-2 gap-4">
+              {[
+                { label:'오늘 매수', value: trades.filter(t=>t.side==='BUY').length + '건',   icon:'▲', color:'text-blue-400' },
+                { label:'오늘 매도', value: trades.filter(t=>t.side==='SELL').length + '건',  icon:'▼', color:'text-orange-400' },
+                { label:'활성 슬롯', value: slots.filter(s=>s.active).length + '/9',          icon:'🎰', color:'text-emerald-400' },
+                { label:'신호 발생', value: Object.values(agents).filter(a=>a.status==='신호발생').length + '건', icon:'📡', color:'text-purple-400' },
+              ].map(({ label, value, icon, color }) => (
+                <div key={label} className="bg-slate-800 border border-slate-700 rounded-xl p-4 flex flex-col justify-between">
+                  <p className="text-slate-400 text-xs">{icon} {label}</p>
+                  <p className={`text-2xl font-bold mt-2 ${color}`}>{value}</p>
+                </div>
+              ))}
+            </div>
           </div>
-        )}
 
-        {/* 상단: 잔고 카드 + 에이전트 상태 */}
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 mb-6">
-          <div className="lg:col-span-1">
-            <BalanceCard balance={balance} />
-          </div>
-          <div className="lg:col-span-1">
-            <AgentStatusCard agents={agents} />
-          </div>
-          {/* 요약 KPI */}
-          <div className="lg:col-span-2 grid grid-cols-2 gap-4">
-            {[
-              { label:'오늘 매수', value: trades.filter(t=>t.side==='BUY').length + '건',   icon:'▲', color:'text-blue-400' },
-              { label:'오늘 매도', value: trades.filter(t=>t.side==='SELL').length + '건',  icon:'▼', color:'text-orange-400' },
-              { label:'활성 슬롯', value: slots.filter(s=>s.active).length + '/9',          icon:'🎰', color:'text-emerald-400' },
-              { label:'신호 발생', value: Object.values(agents).filter(a=>a.status==='신호발생').length + '건', icon:'📡', color:'text-purple-400' },
-            ].map(({ label, value, icon, color }) => (
-              <div key={label} className="bg-slate-800 border border-slate-700 rounded-xl p-4 flex flex-col justify-between">
-                <p className="text-slate-400 text-xs">{icon} {label}</p>
-                <p className={`text-2xl font-bold mt-2 ${color}`}>{value}</p>
-              </div>
-            ))}
-          </div>
-        </div>
+          {/* 🏆 대표님 전용 2대 원클릭 추천전략 선택기 */}
+          <StrategySelector onStrategyApplied={fetchAll} />
 
-        {/* 🏆 대표님 전용 2대 원클릭 추천전략 선택기 */}
-        <StrategySelector onStrategyApplied={fetchAll} />
+          {/* 슬롯 매니저 */}
+          <section className="bg-slate-800 border border-slate-700 rounded-xl p-5 mb-6 shadow-lg">
+            <StockSlotManager slots={slots} onSlotsChange={fetchAll} />
+          </section>
 
-        {/* 슬롯 매니저 */}
-        <section className="bg-slate-800 border border-slate-700 rounded-xl p-5 mb-6 shadow-lg">
-          <StockSlotManager slots={slots} onSlotsChange={fetchAll} />
-        </section>
+          {/* 체결 내역 */}
+          <section>
+            <TradeHistory trades={trades} />
+          </section>
+        </main>
+      </div>
 
-        {/* 체결 내역 */}
-        <section>
-          <TradeHistory trades={trades} />
-        </section>
-      </main>
-
-      {/* 실시간 AI 주식 매매 비서 영자 */}
-      <AiAssistantChat balance={balance} slots={slots} trades={trades} />
+      {/* 실시간 AI 주식 매매 비서 영자 (우측 고정 리사이저블 사이드바) */}
+      <AiAssistantChat
+        isOpen={chatOpen}
+        setIsOpen={setChatOpen}
+        width={chatWidth}
+        setWidth={setChatWidth}
+        balance={balance}
+        slots={slots}
+        trades={trades}
+      />
     </div>
   )
 }

@@ -1,19 +1,31 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 
-export default function AiAssistantChat({ balance, slots, trades }) {
-  const [isOpen, setIsOpen] = useState(false)
+export default function AiAssistantChat({
+  isOpen,
+  setIsOpen,
+  width = 440,
+  setWidth,
+  balance,
+  slots,
+  trades
+}) {
   const [messages, setMessages] = useState([
     {
       id: 1,
       sender: 'ai',
       avatar: 'https://raw.githubusercontent.com/wonseokjung/solopreneur-ai-agents/main/agents/youngja/assets/youngja_hello.png',
-      text: '대표님~ 안녕하세요! AI 주식 매매 비서 영자예요! 🎨✨\n\n오늘 장세나 보유 종목, 매매 전략에 대해 무엇이든 편하게 물어보세요~ 제가 실시간 데이터와 함께 친절하게 브리핑해 드릴게요! 💖'
+      text: '대표님~ 안녕하세요! AI 디자인실장이자 주식 비서 영자예요! 🎨✨\n\n대표님께서 편하게 질문하실 수 있도록 화면 오른쪽에 든든하게 고정해 두었어요!\n왼쪽 테두리를 마우스로 드래그하시면 가로 너비도 자유롭게 조절하실 수 있답니다~ 💻\n\n오늘 장세, 계좌 잔고, 추천전략이나 주식 초보 질문까지 무엇이든 편하게 물어보세요! 💖'
     }
   ])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [aiStatus, setAiStatus] = useState('checking') // 'connected' | 'offline' | 'checking'
   const messagesEndRef = useRef(null)
+
+  // 리사이징 관련 ref
+  const isDraggingRef = useRef(false)
+  const startXRef = useRef(0)
+  const startWidthRef = useRef(width)
 
   // 로컬 AI 연결 상태 체크 (LM Studio 1234 포트)
   useEffect(() => {
@@ -34,11 +46,54 @@ export default function AiAssistantChat({ balance, slots, trades }) {
     return () => clearInterval(interval)
   }, [])
 
+  // 메시지 스크롤 맨 아래로
   useEffect(() => {
     if (isOpen) {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
     }
   }, [messages, isOpen])
+
+  // 가로 크기 드래그 리사이저 핸들러
+  const handleMouseDown = useCallback((e) => {
+    e.preventDefault()
+    isDraggingRef.current = true
+    startXRef.current = e.clientX
+    startWidthRef.current = width
+    document.body.style.userSelect = 'none'
+    document.body.style.cursor = 'col-resize'
+
+    const handleMouseMove = (moveEvent) => {
+      if (!isDraggingRef.current) return
+      // 우측 사이드바: 마우스를 왼쪽으로 움직일수록 폭(width)이 넓어짐
+      const deltaX = startXRef.current - moveEvent.clientX
+      const newWidth = Math.min(
+        Math.max(startWidthRef.current + deltaX, 320),
+        Math.min(window.innerWidth - 120, 850)
+      )
+      if (setWidth) {
+        setWidth(newWidth)
+      }
+    }
+
+    const handleMouseUp = () => {
+      if (isDraggingRef.current) {
+        isDraggingRef.current = false
+        document.body.style.userSelect = ''
+        document.body.style.cursor = ''
+        window.removeEventListener('mousemove', handleMouseMove)
+        window.removeEventListener('mouseup', handleMouseUp)
+        if (setWidth) {
+          setWidth((finalW) => {
+            localStorage.setItem('youngja_chat_width', String(finalW))
+            return finalW
+          })
+        }
+      }
+    }
+
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseup', handleMouseUp)
+  }, [width, setWidth])
 
   // 로컬 AI로 메시지 전송
   const handleSend = async (textToSend) => {
@@ -50,23 +105,8 @@ export default function AiAssistantChat({ balance, slots, trades }) {
     setInput('')
     setIsLoading(true)
 
-    // 시스템 컨텍스트 (실시간 계좌/슬롯 정보 주입)
-    const contextPrompt = `
-당신은 1인 기업가 이승호 대표님을 보좌하는 친절하고 똑똑한 AI 주식 매매 비서이자 디자인실장 '영자'입니다.
-말투는 항상 상냥하고 감각적인 한국어로, "대표님~", "저 영자가요~"를 사용하며 이모지를 적절히 섞어 따뜻하고 전문적으로 답변하세요.
-
-[현재 대표님의 실시간 주식 포트폴리오 데이터]
-- 총 평가금액: ${(balance?.totalEval || 0).toLocaleString()}원
-- 예수금(매수 가능 현금): ${(balance?.availableCash || 0).toLocaleString()}원
-- 오늘 실현 손익: ${(balance?.todayPnl || 0).toLocaleString()}원 (${balance?.todayPnlRate || 0}%)
-- 활성 슬롯 현황:
-${slots?.filter(s => s.stockCode).map(s => `  * 슬롯 ${s.id}: ${s.stockName}(${s.stockCode}) | 전략: ${s.strategy} | 가동상태: ${s.active ? '가동중' : '정지'}`).join('\n')}
-
-대표님의 질문에 대해 위 포트폴리오 상황을 참고하여 전문적이고 실행 가능한 조언을 해주세요.
-`.trim()
-
     try {
-      // 백엔드 API (/api/ai/chat) 호출: LM Studio + 실시간 시세/계좌 데이터 결합
+      // 백엔드 API (/api/ai/chat) 호출: LM Studio + 20년 트레이더 페르소나 + 실시간 시세/계좌 데이터 결합
       const res = await fetch('/api/ai/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -85,16 +125,18 @@ ${slots?.filter(s => s.stockCode).map(s => `  * 슬롯 ${s.id}: ${s.stockName}($
         text: aiReply
       }])
     } catch {
-      // 로컬 AI 지연 시 스마트 주식 가이드 폴백
+      // 로컬 AI 지연 시 친절한 주식 가이드 폴백
       let fallbackText = ''
-      if (userQuery.includes('시장') || userQuery.includes('상황') || userQuery.includes('장세')) {
-        fallbackText = `대표님! 오늘 시장 상황 브리핑해 드릴게요~ 📊✨\n\n• 코스피 대장주 삼성전자: 251,000원선에서 단기 조정을 받으며 과매도 구간(세일 구간)을 형성하고 있어요!\n• 현재 추천 가동 중인 1호 [우량주 안전 줍줍] 전략이 바닥 반등 지점을 정밀 감시하고 있답니다.\n\n공포에 던질 때 줍는 역발상 전략으로 안전하게 수익을 노려볼 타이밍이에요~ 💖`
-      } else if (userQuery.includes('삼성전자') || userQuery.includes('005930')) {
-        fallbackText = `대표님! 삼성전자는 현재 1번 슬롯에서 RSI 과매도 반등 전략으로 모니터링하기 딱 좋아요! 📉➔📈\n\n1주(약 6~7만원) 소액으로 1회 매수금액을 맞추고 [익절 +3.5% / 손절 -2.0%]로 돌려두시면 아주 안전하게 첫 승리를 경험하실 수 있답니다~!`
+      if (userQuery.includes('5만원') || (userQuery.includes('삼성전자') && (userQuery.includes('살 수') || userQuery.includes('접근')))) {
+        fallbackText = `대표님! 완전 중요한 팩트 질문이세요~ 💡✨\n\n1. **삼성전자 1주 가격**: 현재 약 250,000원 선(최근 시세 기준)이에요. 국내 정규장에서는 '1주 단위'로 체결되기 때문에 5만원으로는 1주를 매수할 수 없어요!\n2. **슬롯 투자금액 설정 팁**:\n• 만약 슬롯 투자금을 5만원으로 지정해두시면 1주 가격(약 25만원) 미만이라 주문이 나가지 않아요 🙅‍♀️\n• 삼성전자를 매매하시려면 슬롯 매수금액을 **최소 30만원 이상**으로 설정해두셔야 1주씩 안전하게 매수된답니다!\n3. **소액(5~10만원)으로 시작하고 싶으실 땐**:\n• 주당 가격이 1~5만원 대인 알짜 대형주나 KODEX 코스피 ETF 같은 종목을 슬롯에 등록하시면 소액으로도 완벽하게 자동매매를 돌리실 수 있어요~ 💖`
+      } else if (userQuery.includes('시장') || userQuery.includes('상황') || userQuery.includes('장세')) {
+        fallbackText = `대표님! 오늘 시장 상황 핵심 요약해 드릴게요~ 📊✨\n\n• 코스피 대장주 삼성전자는 250,000원선에서 기술적 눌림목(RSI 과매도 구간)을 다지고 있어요.\n• 현재 추천 가동 중인 1호 [우량주 안전 줍줍] 전략이 바닥 반등 시그널을 정밀 감시하고 있답니다.\n\n시장이 주춤할 때가 바로 우량주를 세일 가격에 모아갈 절호의 기회예요~ 든든하게 지켜봐 주세요! 💖`
       } else if (userQuery.includes('잔고') || userQuery.includes('수익') || userQuery.includes('계좌')) {
-        fallbackText = `대표님 계좌 브리핑해 드릴게요! 📊\n\n• 계좌: 주월클 (68413157-01)\n• 가용 예수금: ${(balance?.availableCash || 1).toLocaleString()}원\n• 현재 가동 전략: 1호 우량주 안전 줍줍\n\n연습용 예수금(5~10만원)을 입금하시면 봇이 좋은 기회에 즉시 1주를 매수하고 톡으로 알려드릴게요~!`
+        fallbackText = `대표님의 실계좌 현황 브리핑해 드릴게요! 📊\n\n• 계좌: 주월클 (68413157-01)\n• 가용 예수금: ${(balance?.availableCash || 1).toLocaleString()}원\n• 추천 가동 전략: 1호 우량주 안전 줍줍 (RSI 과매도 반등)\n\n테스트용 예수금(약 30만원~50만원)을 입금해 주시면, 봇이 황금 매수 타점에 1주를 체결하고 텔레그램으로 즉시 보고드릴게요! ✨`
+      } else if (userQuery.includes('1호') || userQuery.includes('안전 줍줍')) {
+        fallbackText = `대표님~ 1호 [우량주 안전 줍줍] 전략은요! 🛡️✨\n\n• 삼성전자 같은 초우량주가 일시적인 악재나 시장 공포로 과매도(RSI < 30)에 들어갈 때 딱 1주씩 분할 매수해요.\n• 그리고 반등이 나와서 목표 수익(+3.5%)에 도달하면 욕심부리지 않고 깔끔하게 익절하는 아주 마음 편한 전략이랍니다! 초보 대표님께 강력 추천드려요~ 👍`
       } else {
-        fallbackText = `대표님 질문에 대해 시장 데이터를 확인했어요! 💖\n\n현재 코스피 시총 상위 대형주들이 단기 눌림목(세일 구간)에 들어와 있어요. 저 영자가 1호 [우량주 안전 줍줍]과 2호 [돌파 모멘텀] 전략으로 철저히 지키고 있으니 든든하게 맡겨주세요! ✨`
+        fallbackText = `대표님 질문에 대해 시장 데이터를 확인했어요! 💖\n\n현재 대형주들이 단기 눌림목에 위치해 있어 안전한 분할 매수 타점을 엿보기 좋은 타이밍이에요. 저 영자가 1호 [우량주 안전 줍줍]과 2호 [돌파 모멘텀] 전략으로 철저히 보좌해 드릴 테니 믿고 맡겨주세요! ✨`
       }
 
       setMessages(prev => [...prev, {
@@ -109,65 +151,151 @@ ${slots?.filter(s => s.stockCode).map(s => `  * 슬롯 ${s.id}: ${s.stockName}($
   }
 
   const quickChips = [
-    '💡 삼성전자 지금 살 타이밍이야?',
-    '📊 내 계좌 잔고랑 손익 브리핑해줘',
-    '⚙️ 초보자 1번 슬롯 세팅 추천해줘',
-    '📈 RSI 과매도 전략이 왜 좋아?'
+    '💡 삼성전자는 5만원으로 살 수 있어?',
+    '📊 내 계좌 잔고랑 가동 상태 브리핑해줘',
+    '⚙️ 1호 [우량주 안전 줍줍] 어떻게 운영돼?',
+    '📈 RSI 과매도 전략이 왜 초보자한테 좋아?'
   ]
+
+  // 대화 내용 초기화
+  const handleClearChat = () => {
+    if (window.confirm('대화 기록을 초기화할까요?')) {
+      setMessages([
+        {
+          id: Date.now(),
+          sender: 'ai',
+          avatar: 'https://raw.githubusercontent.com/wonseokjung/solopreneur-ai-agents/main/agents/youngja/assets/youngja_hello.png',
+          text: '대화가 새롭게 정리되었어요, 대표님! ✨\n궁금한 점이 생기시면 언제든 편하게 질문해 주세요~ 💖'
+        }
+      ])
+    }
+  }
 
   return (
     <>
-      {/* ── 우측 하단 플로팅 챗 버튼 ── */}
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="fixed bottom-6 right-6 z-50 flex items-center gap-3 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white px-5 py-3.5 rounded-full shadow-2xl transition-all duration-300 transform hover:scale-105 border border-purple-400/40 group"
-      >
-        <div className="relative">
-          <img
-            src="https://raw.githubusercontent.com/wonseokjung/solopreneur-ai-agents/main/agents/youngja/assets/youngja_hello.png"
-            alt="영자"
-            className="w-8 h-8 rounded-full border border-white/40 shadow-sm"
-          />
-          <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-slate-900 ${aiStatus === 'connected' ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
-        </div>
-        <span className="font-semibold text-sm tracking-wide">AI 비서 영자</span>
-        <span className="text-xs bg-purple-900/60 px-2 py-0.5 rounded-full text-purple-200 border border-purple-400/30">
-          {aiStatus === 'connected' ? '로컬 AI ON' : '스마트 비서'}
-        </span>
-      </button>
+      {/* ── 사이드바가 닫혔을 때: 우측 중앙 미니 플로팅 탭 ── */}
+      {!isOpen && (
+        <button
+          onClick={() => setIsOpen(true)}
+          className="fixed top-1/2 right-0 -translate-y-1/2 z-40 flex items-center gap-2.5 bg-gradient-to-l from-purple-700 via-indigo-700 to-slate-900 hover:from-purple-600 hover:to-indigo-600 text-white pl-3.5 pr-2 py-3.5 rounded-l-2xl shadow-2xl transition-all duration-300 transform hover:-translate-x-1 border-y border-l border-purple-400/40 group"
+          title="AI 비서 영자 대화창 열기"
+        >
+          <div className="relative">
+            <img
+              src="https://raw.githubusercontent.com/wonseokjung/solopreneur-ai-agents/main/agents/youngja/assets/youngja_hello.png"
+              alt="영자"
+              className="w-8 h-8 rounded-full border border-white/50 shadow"
+            />
+            <span
+              className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-slate-900 ${
+                aiStatus === 'connected' ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
+              }`}
+            />
+          </div>
+          <div className="flex flex-col text-left">
+            <span className="font-bold text-xs tracking-tight text-white flex items-center gap-1">
+              AI 비서 영자
+              <span className="text-[10px] text-purple-300">◀</span>
+            </span>
+            <span className="text-[10px] text-purple-200/80">
+              {aiStatus === 'connected' ? '로컬 AI ON' : '스마트 가이드'}
+            </span>
+          </div>
+        </button>
+      )}
 
-      {/* ── 챗 모달 윈도우 ── */}
+      {/* ── 화면 우측 고정 사이드바 (전체 높이 100vh) ── */}
       {isOpen && (
-        <div className="fixed bottom-24 right-6 z-50 w-[420px] max-w-[calc(100vw-2rem)] h-[580px] bg-slate-900/95 backdrop-blur-xl border border-purple-500/30 rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-5 duration-200">
-          
-          {/* 헤더 */}
-          <div className="p-4 bg-gradient-to-r from-slate-900 via-purple-950/40 to-slate-900 border-b border-purple-500/20 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <img
-                src="https://raw.githubusercontent.com/wonseokjung/solopreneur-ai-agents/main/agents/youngja/assets/youngja_hello.png"
-                alt="영자"
-                className="w-9 h-9 rounded-full border-2 border-purple-400/60 shadow"
-              />
+        <aside
+          style={{ width: `${width}px` }}
+          className="fixed top-0 right-0 h-screen z-50 bg-slate-900/98 backdrop-blur-xl border-l border-purple-500/30 shadow-2xl flex flex-col transition-all duration-75 select-none"
+        >
+          {/* ── 좌측 드래그 리사이저 바 ── */}
+          <div
+            onMouseDown={handleMouseDown}
+            className="absolute left-0 top-0 bottom-0 w-2 -ml-1 cursor-col-resize hover:bg-purple-500/50 active:bg-purple-600 transition-colors z-20 flex items-center justify-center group"
+            title="마우스를 좌우로 드래그하여 대화창 너비를 조절하세요"
+          >
+            <div className="w-1 h-12 rounded-full bg-slate-600/70 group-hover:bg-purple-400 group-active:bg-purple-200 transition-colors shadow" />
+          </div>
+
+          {/* ── 사이드바 헤더 ── */}
+          <div className="p-3.5 bg-gradient-to-r from-slate-950 via-purple-950/50 to-slate-900 border-b border-purple-500/20 flex items-center justify-between flex-shrink-0">
+            <div className="flex items-center gap-2.5">
+              <div className="relative">
+                <img
+                  src="https://raw.githubusercontent.com/wonseokjung/solopreneur-ai-agents/main/agents/youngja/assets/youngja_hello.png"
+                  alt="영자"
+                  className="w-9 h-9 rounded-full border-2 border-purple-400/60 shadow"
+                />
+                <span
+                  className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-slate-900 ${
+                    aiStatus === 'connected' ? 'bg-emerald-400 animate-ping' : 'bg-amber-400'
+                  }`}
+                />
+              </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <h3 className="font-bold text-sm text-slate-100">AI 주식 매매 비서 영자</h3>
-                  <span className={`w-2 h-2 rounded-full ${aiStatus === 'connected' ? 'bg-emerald-400 animate-ping' : 'bg-amber-400'}`} />
+                  <h3 className="font-bold text-sm text-slate-100 flex items-center gap-1.5">
+                    AI 비서 영자
+                    <span className="text-xs">🎨✨</span>
+                  </h3>
+                  <span
+                    className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${
+                      aiStatus === 'connected'
+                        ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40'
+                        : 'bg-amber-950/80 text-amber-300 border-amber-500/40'
+                    }`}
+                  >
+                    {aiStatus === 'connected' ? '⚡ 로컬 AI (LM Studio)' : '💡 스마트 가이드'}
+                  </span>
                 </div>
-                <p className="text-[11px] text-slate-400">
-                  {aiStatus === 'connected' ? '⚡ 로컬 AI (LM Studio) 연결됨' : '💡 지능형 주식 가이드 가동중'}
+                <p className="text-[11px] text-slate-400 flex items-center gap-2 mt-0.5">
+                  <span>너비: {width}px</span>
+                  <span className="text-slate-600">•</span>
+                  <span>왼쪽 테두리 드래그로 조절 가능</span>
                 </p>
               </div>
             </div>
-            <button
-              onClick={() => setIsOpen(false)}
-              className="text-slate-400 hover:text-slate-200 p-1.5 rounded-lg hover:bg-slate-800/60 text-lg transition"
-            >
-              ✕
-            </button>
+
+            {/* 헤더 우측 조작 버튼 */}
+            <div className="flex items-center gap-1">
+              <button
+                onClick={handleClearChat}
+                className="text-slate-400 hover:text-slate-200 p-1.5 rounded-lg hover:bg-slate-800/80 text-xs transition"
+                title="대화 내용 지우기"
+              >
+                🔄
+              </button>
+              <button
+                onClick={() => setIsOpen(false)}
+                className="text-slate-400 hover:text-purple-300 p-1.5 rounded-lg hover:bg-slate-800/80 text-sm font-bold transition flex items-center gap-1"
+                title="사이드바 접기"
+              >
+                <span>접기</span>
+                <span className="text-xs">▶</span>
+              </button>
+            </div>
           </div>
 
-          {/* 메시지 리스트 */}
-          <div className="flex-1 p-4 overflow-y-auto space-y-3.5 scrollbar-thin scrollbar-thumb-slate-700">
+          {/* ── 상단 계좌 미니 스냅샷 뱃지 ── */}
+          <div className="px-3.5 py-2 bg-slate-950/80 border-b border-slate-800/80 flex items-center justify-between text-xs text-slate-300 flex-shrink-0">
+            <div className="flex items-center gap-2">
+              <span className="text-slate-400">예수금:</span>
+              <span className="font-bold text-purple-300">
+                {(balance?.availableCash || 1).toLocaleString()}원
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-slate-400">가동 슬롯:</span>
+              <span className="font-semibold text-emerald-400">
+                {slots?.filter(s => s.active).length || 0}개 가동중
+              </span>
+            </div>
+          </div>
+
+          {/* ── 메시지 리스트 (남은 높이 전체 활용) ── */}
+          <div className="flex-1 p-4 overflow-y-auto space-y-3.5 scrollbar-thin scrollbar-thumb-slate-700 select-text">
             {messages.map(msg => (
               <div
                 key={msg.id}
@@ -181,10 +309,10 @@ ${slots?.filter(s => s.stockCode).map(s => `  * 슬롯 ${s.id}: ${s.stockName}($
                   />
                 )}
                 <div
-                  className={`max-w-[82%] px-3.5 py-2.5 rounded-2xl text-xs sm:text-sm leading-relaxed whitespace-pre-wrap ${
+                  className={`max-w-[85%] px-3.5 py-2.5 rounded-2xl text-xs sm:text-sm leading-relaxed whitespace-pre-wrap ${
                     msg.sender === 'user'
                       ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-br-none shadow-md'
-                      : 'bg-slate-800/90 text-slate-200 border border-slate-700/80 rounded-bl-none shadow-sm'
+                      : 'bg-slate-800/95 text-slate-200 border border-slate-700/80 rounded-bl-none shadow-sm'
                   }`}
                 >
                   {msg.text}
@@ -192,47 +320,56 @@ ${slots?.filter(s => s.stockCode).map(s => `  * 슬롯 ${s.id}: ${s.stockName}($
               </div>
             ))}
             {isLoading && (
-              <div className="flex gap-2 items-center text-xs text-purple-300/80 px-2 py-1">
-                <span className="animate-spin text-sm">✨</span> 영자가 분석하고 있어요...
+              <div className="flex gap-2 items-center text-xs text-purple-300/90 px-2 py-1 bg-purple-950/30 border border-purple-500/20 rounded-xl w-fit">
+                <span className="animate-spin text-sm">✨</span> 영자가 팩트 데이터와 시장을 분석하고 있어요...
               </div>
             )}
             <div ref={messagesEndRef} />
           </div>
 
-          {/* 빠른 추천 칩 */}
-          <div className="px-3 py-2 bg-slate-950/60 border-t border-slate-800 flex gap-1.5 overflow-x-auto scrollbar-none">
-            {quickChips.map((chip, idx) => (
-              <button
-                key={idx}
-                onClick={() => handleSend(chip.replace(/^[^\s]+ /, ''))}
-                className="whitespace-nowrap text-[11px] bg-slate-800 hover:bg-purple-900/40 text-purple-200 border border-purple-500/20 px-2.5 py-1 rounded-full transition"
-              >
-                {chip}
-              </button>
-            ))}
+          {/* ── 초보 대표님을 위한 빠른 질문 칩 ── */}
+          <div className="p-2.5 bg-slate-950/70 border-t border-slate-800 flex flex-col gap-1.5 flex-shrink-0">
+            <span className="text-[10px] text-slate-400 font-medium px-1 flex items-center gap-1">
+              <span>💡</span> 자주 묻는 초보 가이드:
+            </span>
+            <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-slate-800">
+              {quickChips.map((chip, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => handleSend(chip.replace(/^[^\s]+ /, ''))}
+                  className="whitespace-nowrap text-[11px] bg-slate-800/90 hover:bg-purple-900/50 hover:text-purple-100 text-slate-300 border border-slate-700/80 hover:border-purple-500/40 px-2.5 py-1 rounded-full transition shadow-sm"
+                >
+                  {chip}
+                </button>
+              ))}
+            </div>
           </div>
 
-          {/* 입력창 */}
+          {/* ── 메시지 입력창 ── */}
           <form
-            onSubmit={(e) => { e.preventDefault(); handleSend(); }}
-            className="p-3 bg-slate-950 border-t border-purple-500/20 flex gap-2"
+            onSubmit={(e) => {
+              e.preventDefault()
+              handleSend()
+            }}
+            className="p-3 bg-slate-950 border-t border-purple-500/20 flex gap-2 flex-shrink-0"
           >
             <input
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="영자에게 주식이나 매매에 대해 물어보세요..."
+              placeholder="영자에게 주식이나 매매에 대해 편하게 질문하세요..."
               className="flex-1 bg-slate-800/90 text-slate-100 placeholder-slate-500 text-xs sm:text-sm px-3.5 py-2.5 rounded-xl border border-slate-700 focus:outline-none focus:border-purple-400 transition"
             />
             <button
               type="submit"
               disabled={isLoading || !input.trim()}
-              className="bg-purple-600 hover:bg-purple-500 disabled:bg-slate-800 disabled:text-slate-600 text-white font-medium text-xs px-4 py-2.5 rounded-xl transition shadow"
+              className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-600 text-white font-medium text-xs px-4 py-2.5 rounded-xl transition shadow flex items-center gap-1 flex-shrink-0"
             >
-              전송
+              <span>전송</span>
+              <span>💬</span>
             </button>
           </form>
-        </div>
+        </aside>
       )}
     </>
   )
