@@ -18,29 +18,32 @@ class StockScheduler:
         self._setup_jobs()
 
     def _setup_jobs(self):
-        # 1. 매주 월요일 08:15: [주간 증시 대전망 리포트] (글로벌 캘린더 & 주간 밴드)
-        self.scheduler.add_job(self.reporter.send_weekly_outlook, 'cron', day_of_week='mon', hour=8, minute=15)
-
-        # 2. 평일 08:35: [모닝 장전 브리핑] (큰 그림 & 작은 그림 시장 분석)
+        # 1. [정기 1회차] 평일 08:35: 모닝 장전 브리핑 (큰 그림 & 작은 그림 시장 분석 & 아침 뉴스)
         self.scheduler.add_job(self.reporter.send_morning_briefing, 'cron', day_of_week='mon-fri', hour=8, minute=35)
 
-        # 3. 평일 09:00: 매매 봇 감시 가동
+        # 2. 평일 09:00: 매매 봇 감시 가동
         self.scheduler.add_job(self.start_trading, 'cron', day_of_week='mon-fri', hour=9, minute=0)
 
-        # 4. 평일 11:30: [점심 증시 핵심 속보 & 1줄 해설]
-        self.scheduler.add_job(self.reporter.send_breaking_news_alert, 'cron', day_of_week='mon-fri', hour=11, minute=30)
+        # 3. [정기 2회차] 평일 12:00: 점심 증시 흐름 및 장중 뉴스 브리핑
+        self.scheduler.add_job(self.reporter.send_midday_briefing, 'cron', day_of_week='mon-fri', hour=12, minute=0)
 
-        # 5. 평일 14:00: [오후 증시 핵심 속보 & 1줄 해설]
-        self.scheduler.add_job(self.reporter.send_breaking_news_alert, 'cron', day_of_week='mon-fri', hour=14, minute=0)
-
-        # 6. 평일 15:20: 장 마감 10분 전 경고 (신규 진입 차단)
+        # 4. 평일 15:20: 장 마감 10분 전 경고 (신규 진입 차단)
         self.scheduler.add_job(self.closing_warning, 'cron', day_of_week='mon-fri', hour=15, minute=20)
 
-        # 7. 평일 15:30: 매매 봇 정지 + 미체결 주문 안전 취소
+        # 5. 평일 15:30: 매매 봇 정지 + 미체결 주문 안전 취소
         self.scheduler.add_job(self.stop_trading, 'cron', day_of_week='mon-fri', hour=15, minute=30)
 
-        # 8. 평일 15:40: [장 마감 결산 & 내일 전망 브리핑] (수급 복기 및 정산)
+        # 6. [정기 3회차] 평일 15:40: 장 마감 결산 & 내일 전망 브리핑 (수급 복기 및 정산)
         self.scheduler.add_job(self.reporter.send_closing_briefing, 'cron', day_of_week='mon-fri', hour=15, minute=40)
+
+        # 7. 매주 월요일 08:15: [주간 증시 대전망 리포트] (글로벌 캘린더 & 주간 밴드)
+        self.scheduler.add_job(self.reporter.send_weekly_outlook, 'cron', day_of_week='mon', hour=8, minute=15)
+
+        # 8. [핫이슈 속보 감시] 3분마다 최신 뉴스 스캔하여 핫이슈 발생 시 횟수 무제한 즉시 발송
+        self.scheduler.add_job(self.reporter.check_and_send_hot_issues, 'interval', minutes=3)
+
+        # 9. [오늘 테스트 모드] 1시간마다 실시간 시장 시황 & 핵심 뉴스 텔레그램 발송
+        self.scheduler.add_job(self.reporter.send_hourly_market_news, 'interval', hours=1)
 
     async def start(self):
         """스케줄러 시작 및 무한 대기 루프"""

@@ -25,9 +25,15 @@ sys.path.append(str(Path(__file__).parent))
 from core.kis_client import KISClient
 from core.stock_scanner import StockScanner, TOP_BLUECHIP_TICKERS
 from notifications.telegram_bot import TelegramNotifier
+from core.scheduler import StockScheduler
 
 kis = KISClient()
 telegram = TelegramNotifier()
+
+# ⏰ 백그라운드 스케줄러 가동 (하루 3회 브리핑 + 3분 주기 핫이슈 감시 + 1시간 정기 리포트)
+scheduler = StockScheduler(telegram=telegram)
+scheduler.scheduler.start()
+print("⏰ StockScheduler 백그라운드 엔진 가동 완료 (하루 3회 브리핑 + 핫이슈 속보 감시 + 1시간 정기 뉴스)")
 
 current_strategy = {
     "selected": "SAFE_DIP",
@@ -144,6 +150,16 @@ class RequestHandler(BaseHTTPRequestHandler):
         # 6. 현재 선택 전략 조회
         elif path == '/api/strategy/current' or path == '/strategy/current':
             self._json(current_strategy)
+
+        # 7. 실시간 시장 뉴스 수동/즉시 전송 트리거
+        elif path == '/api/news/hourly':
+            msg = scheduler.reporter.send_hourly_market_news("대표님 요청 즉시 발송")
+            self._json({"success": True, "message": "1시간 정기 뉴스 텔레그램 발송 완료", "content": msg})
+
+        # 8. 핫이슈 속보 수동 스캔 트리거
+        elif path == '/api/news/hot':
+            count = scheduler.reporter.check_and_send_hot_issues()
+            self._json({"success": True, "sentCount": count})
 
         else:
             self._json({"error": "Not Found"}, status=404)

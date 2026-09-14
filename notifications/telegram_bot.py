@@ -2,16 +2,21 @@ import os
 import threading
 from typing import Dict, Any, Optional
 from loguru import logger
+import requests
+from dotenv import load_dotenv
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CallbackQueryHandler, ContextTypes
 import asyncio
+
+load_dotenv()
 
 class TelegramNotifier:
     """
     텔레그램 봇 알림 시스템 (NURIOH 구조 계승)
     python-telegram-bot v20+ 비동기 프레임워크를 기반으로 합니다.
     """
-    def __init__(self):
+    def __init__(self, enable_polling: bool = False):
+        load_dotenv()
         self.token = os.getenv("TELEGRAM_BOT_TOKEN")
         self.chat_id = os.getenv("TELEGRAM_CHAT_ID")
         self.approval_events = {}
@@ -20,21 +25,23 @@ class TelegramNotifier:
         if not self.token or not self.chat_id:
             logger.warning("TELEGRAM_BOT_TOKEN 또는 TELEGRAM_CHAT_ID가 .env에 설정되지 않았습니다.")
             
-        if self.token:
-            self.application = Application.builder().token(self.token).build()
-            self.application.add_handler(CallbackQueryHandler(self._button_callback))
-            # 별도 스레드에서 폴링 시작 (실제 환경 적용 시 구조 최적화 필요)
-            self._loop_thread = threading.Thread(target=self._run_polling_loop, daemon=True)
-            self._loop_thread.start()
+        if self.token and enable_polling:
+            try:
+                self.application = Application.builder().token(self.token).build()
+                self.application.add_handler(CallbackQueryHandler(self._button_callback))
+                self._loop_thread = threading.Thread(target=self._run_polling_loop, daemon=True)
+                self._loop_thread.start()
+            except Exception as e:
+                logger.warning(f"텔레그램 폴링 초기화 생략: {e}")
 
     def _run_polling_loop(self):
         """비동기 폴링을 위한 이벤트 루프 실행"""
         try:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            self.application.run_polling(drop_pending_updates=True)
+            self.application.run_polling(drop_pending_updates=True, stop_signals=None)
         except Exception as e:
-            logger.error(f"Telegram polling error: {e}")
+            logger.warning(f"Telegram polling warning: {e}")
 
     async def _button_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """콜백 버튼 처리 핸들러"""
@@ -69,29 +76,29 @@ class TelegramNotifier:
             return None
 
     def send_signal_message(self, message: str, reply_markup_dict: dict = None) -> Optional[int]:
-        """메시지를 발송하고 message_id를 반환합니다."""
+        """메시지를 발송하고 message_id를 반환합니다. (스레드 안전)"""
         if not self.token or not self.chat_id:
             return None
             
         try:
-            bot = Bot(token=self.token)
-            
-            reply_markup = None
-            if reply_markup_dict and "inline_keyboard" in reply_markup_dict:
-                keyboard = [
-                    [InlineKeyboardButton(btn['text'], callback_data=btn['callback_data']) for btn in row]
-                    for row in reply_markup_dict['inline_keyboard']
-                ]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-                
-            # 동기적 실행을 위한 임시 래퍼
-            async def _send():
-                msg = await bot.send_message(chat_id=self.chat_id, text=message, reply_markup=reply_markup)
-                return msg.message_id
-                
-            return asyncio.run(_send())
+            url = f"https://api.telegram.org/bot{self.token}/sendMessage"
+            payload = {
+                "chat_id": self.chat_id,
+                "text": message,
+                "disable_web_page_preview": True
+            }
+            if reply_markup_dict:
+                payload["reply_markup"] = reply_markup_dict
+
+            res = requests.post(url, json=payload, timeout=10)
+            if res.ok:
+                data = res.json()
+                return data.get("result", {}).get("message_id")
+            else:
+                logger.error(f"텔레그램 발송 실패: {res.status_code} - {res.text}")
+                return None
         except Exception as e:
-            logger.error(f"텔레그램 메시지 발송 실패: {e}")
+            logger.error(f"텔레그램 메시지 발송 예외: {e}")
             return None
 
     def wait_for_approval(self, message_id: int, timeout: int = 30) -> bool:
