@@ -1,0 +1,34 @@
+# 보안 및 환경변수 (절대 유출 금지!)
+.env
+.env*.local
+kis_token.json
+*.pem
+*.key
+
+# Python
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# 로그 & 임시파일
+logs/
+*.log
+*.db
+*.sqlite3
+backtest/charts/
+
+# 대시보드 (Node.js)
+node_modules/
+dashboard/node_modules/
+dashboard/dist/
+.vite/
+
+# OS & IDE
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
