@@ -1,7 +1,9 @@
-﻿# 📈 주식 자동매매 봇 (Stock Auto Trader)
+# 📈 주식 자동매매 봇 (Stock Auto Trader) `v1.2.0`
 
 > 한국투자증권 KIS Open API 기반 AI 멀티 에이전트 주식 자동매매 시스템  
 > NURIOH AI TRADER (업비트) 아키텍처 계승  
+> 
+> 📄 **상세 마스터 계획서 및 개발 명세서**: [PROJECT_MASTER_PLAN.md](file:///Y:/SynologyDrive/00.withAI/%EC%A3%BC%EC%8B%9D%EC%9E%90%EB%8F%99%EB%A7%A4%EB%A7%A4/PROJECT_MASTER_PLAN.md)를 확인하세요.
 
 ---
 
