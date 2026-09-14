@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 
 function isMarketOpen() {
   const now = new Date()
@@ -31,7 +31,12 @@ export default function Header({ systemStatus = 'running', circuitBreaker = fals
       <div className="flex items-center gap-3">
         <span className="text-2xl">📈</span>
         <div>
-          <h1 className="text-lg font-bold text-white tracking-tight">주식 AI 트레이더</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-lg font-bold text-white tracking-tight">주식 AI 트레이더</h1>
+            <span className="text-[11px] font-bold bg-purple-950/80 text-purple-300 border border-purple-500/40 px-2 py-0.5 rounded-full shadow-sm tracking-wide">
+              v1.2.0
+            </span>
+          </div>
           <p className="text-xs text-slate-400">NURIOH Stock Automation System</p>
         </div>
       </div>
