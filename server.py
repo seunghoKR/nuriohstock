@@ -231,31 +231,62 @@ class RequestHandler(BaseHTTPRequestHandler):
 위 실시간 팩트 데이터를 바탕으로, 대표님의 질문에 대해 20년 경력 전문가로서 가장 정직하고 날카로운 분석을 한국어로 명쾌하게 작성하세요. 생각(Reasoning)은 최소화하고 최종 전문 보고서를 깔끔하게 출력하세요.
 """.strip()
 
-            lm_url = os.getenv('LOCAL_AI_URL', 'http://49.170.204.109:1234/v1') + '/chat/completions'
-            lm_model = os.getenv('LOCAL_AI_MODEL', 'google/gemma-4-e2b')
-
+            gemini_key = os.getenv('GEMINI_API_KEY')
+            gemini_model = os.getenv('GEMINI_MODEL', 'gemini-3.6-flash')
             reply_text = ""
-            try:
-                lm_res = requests.post(lm_url, json={
-                    "model": lm_model,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_msg}
-                    ],
-                    "temperature": 0.5,  # 전문가 분석에 맞춰 정확도 향상 (낮은 temperature)
-                    "max_tokens": 1200
-                }, timeout=60)
+            used_model = gemini_model
 
-                if lm_res.ok:
-                    choice = lm_res.json().get('choices', [{}])[0].get('message', {})
-                    reply_text = choice.get('content', '').strip()
-                    if not reply_text and choice.get('reasoning_content'):
-                        reply_text = choice.get('reasoning_content').strip()
-            except Exception as e:
-                print("LM Studio call error:", e)
+            # 1순위: Google Gemini Cloud AI (무료 티어, 초고속 3.6 Flash)
+            if gemini_key:
+                try:
+                    g_url = f"https://generativelanguage.googleapis.com/v1beta/models/{gemini_model}:generateContent?key={gemini_key}"
+                    g_payload = {
+                        "contents": [
+                            {"role": "user", "parts": [{"text": f"{system_prompt}\n\n[대표님의 질문]\n{user_msg}"}]}
+                        ],
+                        "generationConfig": {
+                            "temperature": 0.4,
+                            "maxOutputTokens": 1500
+                        }
+                    }
+                    g_res = requests.post(g_url, json=g_payload, timeout=20)
+                    if g_res.ok:
+                        data = g_res.json()
+                        parts = data.get('candidates', [{}])[0].get('content', {}).get('parts', [])
+                        if parts and 'text' in parts[0]:
+                            reply_text = parts[0]['text'].strip()
+                            print(f"✨ Google Gemini ({gemini_model}) 분석 완료")
+                except Exception as e:
+                    print("Gemini API call warning, falling back to Local AI:", e)
 
-            # 폴백 시에도 20년 전문가 3단 브리핑 구조로 정밀 답변
+            # 2순위: 로컬 AI (LM Studio, Gemma-4-e2b) 폴백
             if not reply_text:
+                lm_url = os.getenv('LOCAL_AI_URL', 'http://49.170.204.109:1234/v1') + '/chat/completions'
+                lm_model = os.getenv('LOCAL_AI_MODEL', 'google/gemma-4-e2b')
+                used_model = lm_model
+
+                try:
+                    lm_res = requests.post(lm_url, json={
+                        "model": lm_model,
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_msg}
+                        ],
+                        "temperature": 0.5,
+                        "max_tokens": 1200
+                    }, timeout=60)
+
+                    if lm_res.ok:
+                        choice = lm_res.json().get('choices', [{}])[0].get('message', {})
+                        reply_text = choice.get('content', '').strip()
+                        if not reply_text and choice.get('reasoning_content'):
+                            reply_text = choice.get('reasoning_content').strip()
+                except Exception as e:
+                    print("LM Studio call error:", e)
+
+            # 3순위: 오프라인 시에도 20년 전문가 3단 브리핑 구조로 정밀 답변
+            if not reply_text:
+                used_model = "rule-based-expert"
                 reply_text = (
                     f"대표님, 20년 실전 매매 전문가의 관점에서 거짓 없는 팩트 데이터로 브리핑해 드리겠습니다. 📊\n\n"
                     f"1. [실시간 팩트 데이터 진단]\n"
@@ -269,7 +300,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                     f"• 현재 1호 [우량주 안전 줍줍] 봇이 바닥 지지 반등 시점을 100% 자동 감시 중이므로, 섣부른 뇌동매매 없이 봇의 자동 체결 톡을 기다리시는 것을 권고드립니다."
                 )
 
-            return self._json({"reply": reply_text, "model": lm_model})
+            return self._json({"reply": reply_text, "model": used_model})
 
         # 0. 추천전략 선택 및 자동 종목 재배치
         if path == '/api/strategy/select' or path == '/strategy/select':
